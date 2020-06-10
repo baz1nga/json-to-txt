@@ -1,30 +1,32 @@
 import os
 import json
-import datetime
-from typing import Tuple, Union, Optional
+from datetime import datetime
+from typing import Optional
 
 import requests
 from requests.exceptions import ConnectionError
 
-
-TASKS_DIR = os.path.join(os.getcwd(), 'tasks')
-USERS_URL_LINK = 'https://json.medrting.org/users'
+DIR_NAME = 'tasks'
+TASKS_DIR = os.path.join(os.getcwd(), DIR_NAME)
+USERS_URL_LINK = 'https://json.medrating.org/users'
 TODOS_URL_LINK = 'https://json.medrating.org/todos'
-CURR_DATETIME = datetime.datetime.now().strftime('%d.%m.%Y %H:%M')
+CURR_DATETIME = datetime.now().strftime('%d.%m.%Y %H:%M')
 MAX_LENGHT = 50
 
 
-def create_dir() -> None:
-    if not os.path.isdir('tasks'):
+def create_dir(dir_name) -> None:
+    """Создание директории tasks"""
+    if not os.path.isdir(dir_name):
         try:
-            os.mkdir('tasks')
+            os.mkdir(dir_name)
         except PermissionError as error:
-            print(f'Нет прав на создание директории({error})')
+            print(f'Нет прав на создание директории:({error})')
             return None
     return None
 
 
-def get_json_lists(url: str) -> Optional[list]:
+def get_json_list(url: str) -> Optional[list]:
+    """Получение данных со страницы c джсонами"""
     try:
         json_list = json.loads(requests.get(url).text)
     except ConnectionError as error:
@@ -33,14 +35,16 @@ def get_json_lists(url: str) -> Optional[list]:
     return json_list
 
 
-def user_todos_parse(users: list, tasks: list) -> list:
+def create_user_files(users: list, tasks: list) -> list:
+    """Заполнение списка пользователей и их задач данными из двух списков."""
     completed_tasks = ''
     uncompleted_tasks = ''
-    pool_files = []
+    user_files = []
 
     for user in users:
         try:
             user_company = user.get('company').get('name')
+        # Ошибка возникает, когда user.get('company') возвращает None
         except AttributeError:
             user_company = None
 
@@ -60,20 +64,21 @@ def user_todos_parse(users: list, tasks: list) -> list:
 
         content += f'Завершённые задачи:\n{completed_tasks}\n'
         content += f'Оставшиеся задачи:\n{uncompleted_tasks}\n'
-        pool_files.append(
+        user_files.append(
             {'username': user.get('username'), 'task': content},
         )
         # Сбрасываем пулл задач для следующего пользователя.
         completed_tasks = ''
         uncompleted_tasks = ''
-    return pool_files
+    return user_files
 
 
 def create_user_report(files: list) -> None:
+    """Запись файлов из списка в папку в виде .txt файлов"""
     for file in files:
         username = file['username']
         task = file['task']
-        if username is not None:
+        if username:
             file_path = os.path.join(TASKS_DIR, f'{username}.txt')
             if os.path.isfile(file_path):
                 rewrite_report(file_path, username)
@@ -81,30 +86,33 @@ def create_user_report(files: list) -> None:
                 with open(file_path, 'wb') as f:
                     f.write(task.encode('utf-8'))
             except IOError as error:
-                print(f'Произошла ошибка Ввода/Вывода({error}), прерывание')
+                print(f'Произошла ошибка Ввода/Вывода({error})')
                 return None
     return None
 
 
-def rewrite_report(file_path: str, username: str) -> Optional[bool]:
+def rewrite_report(file_path: str, username: str) -> None:
+    """Бекап существующего файла под именем username_Y-m-dTH:M"""
     file_creation_time = os.path.getctime(file_path)
     # Приведение даты и времени создания файла к удобочитаемому виду.
-    datetime_file = datetime.datetime.fromtimestamp(
-        file_creation_time
-    ).strftime('%Y-%m-%dT%H:%M:%S')
+    datetime_file = datetime.fromtimestamp(
+        file_creation_time,
+    ).strftime('%Y-%m-%dT%H:%M')  # Как вариант можно добавить :%S
+    # Чтобы бекапы старых файлов можно было создавать с интервалом не в минуту
+    # А с интервалом в кажую секунду.
     new_filename = f'{username}_{datetime_file}.txt'
     new_file_path = os.path.join(TASKS_DIR, new_filename)
     try:
         os.rename(file_path, new_file_path)
     except IOError as error:
-        print(f'Произошла ошибка Ввода/Вывода({error}), прерывание.')
-        return False
+        print(f'Произошла ошибка Ввода/Вывода({error})')
+        return None
     return None
 
 
 if __name__ == '__main__':
-    create_dir()
-    users_list = get_json_lists(url=USERS_URL_LINK)
-    todos_list = get_json_lists(url=TODOS_URL_LINK)
-    pool_files = user_todos_parse(users_list, todos_list)
+    create_dir(dir_name=DIR_NAME)
+    users_list = get_json_list(url=USERS_URL_LINK)
+    todos_list = get_json_list(url=TODOS_URL_LINK)
+    pool_files = create_user_files(users_list, todos_list)
     create_user_report(pool_files)
